@@ -209,7 +209,7 @@ function saveVragen(siteKey, sitePath, items) {
   const byFile = Object.fromEntries(files.map(f => [f, []]));
 
   for (const item of items) {
-    const { _meta, ...rest } = item;
+    const { _meta, _index, ...rest } = item;
     const file = _meta?.file;
     if (!file || !byFile[file]) {
       throw new Error(`Vraag "${rest.id}" heeft geen geldige _meta.file`);

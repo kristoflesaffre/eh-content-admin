@@ -378,7 +378,11 @@ function escapeAttr(str) {
 }
 
 function linesArea(name, value, label, hint = "Één regel per item.") {
-  const lines = Array.isArray(value) ? value.join("\n") : "";
+  const lines = Array.isArray(value)
+    ? value.join("\n")
+    : typeof value === "string"
+      ? value.split(",").join("\n")
+      : "";
   return field(label, `<textarea name="${name}" rows="5">${escapeHtml(lines)}</textarea><p class="hint">${escapeHtml(hint)}</p>`);
 }
 
@@ -1145,7 +1149,7 @@ function buildEditorForm(item) {
         ${blokkenEditor("blokken", item.blokken)}
         ${linesArea("doeDit", item.doeDit, "Doe dit")}
         ${linesArea("vermijd", item.vermijd, "Vermijd")}
-        ${field("Zeg dit", textInput("zegDit", item.zegDit, true))}
+        ${linesArea("zegDit", item.zegDit, "Zeg dit")}
         ${bronnenEditor("bronnen", item.bronnen)}
         ${linesArea("gerelateerd", item.gerelateerd, "Gerelateerde vragen", "Één vraag-id per regel.")}
       </div>`;
@@ -1264,6 +1268,7 @@ function parseForm(form, item) {
   const out = { ...item };
 
   if (s === "vragen") {
+    delete out._index;
     out.id = fd.get("id");
     out.vraag = fd.get("vraag");
     out.thema = fd.get("thema");
@@ -1274,7 +1279,7 @@ function parseForm(form, item) {
     out.blokken = parseRepeaterFromForm(form, "blokken");
     out.doeDit = parseLines(fd.get("doeDit"));
     out.vermijd = parseLines(fd.get("vermijd"));
-    out.zegDit = fd.get("zegDit") || null;
+    out.zegDit = parseLines(fd.get("zegDit"));
     out.bronnen = parseRepeaterFromForm(form, "bronnen");
     out.gerelateerd = parseLines(fd.get("gerelateerd"));
     if (heeftBeeldEditor()) {
