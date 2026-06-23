@@ -1,0 +1,16 @@
+{
+  "port": 4180,
+  "adminToken": "",
+  "sites": {
+    "ehbo": {
+      "label": "EHBO — Eerste Hulp bij Opvoeden",
+      "path": "../website opvoeden",
+      "previewUrl": "http://localhost:4173"
+    },
+    "ehbt": {
+      "label": "EHBT — Eerste Hulp bij Trauma",
+      "path": "../website trauma",
+      "previewUrl": "http://localhost:4174"
+    }
+  }
+}

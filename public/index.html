@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EHBO & EHBT — Contentbeheer</title>
+  <link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Contentbeheer</h1>
+    <nav class="site-tabs" id="site-tabs" aria-label="Website kiezen"></nav>
+    <div class="header-actions">
+      <a class="preview-link" id="preview-link" href="#" target="_blank" rel="noopener">Bekijk website ↗</a>
+      <button type="button" class="btn btn-secondary" id="btn-reload">Herladen</button>
+      <button type="button" class="btn btn-secondary" id="btn-save-section">Bewaar sectie</button>
+      <button type="button" class="btn btn-primary" id="btn-save-all">Bewaar alles</button>
+      <span class="status" id="status" role="status"></span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <h2>Secties</h2>
+      <nav id="section-nav"></nav>
+    </aside>
+
+    <section class="list-panel">
+      <div class="list-toolbar">
+        <input type="search" id="search" placeholder="Zoeken op titel of id…" autocomplete="off">
+        <button type="button" class="btn btn-secondary" id="btn-new" hidden>Nieuw</button>
+      </div>
+      <div class="list-count" id="list-count"></div>
+      <div class="item-list" id="item-list"></div>
+    </section>
+
+    <main class="editor-panel" id="editor"></main>
+  </div>
+
+  <script src="/llm-vraag.js"></script>
+  <script src="/admin.js"></script>
+</body>
+</html>

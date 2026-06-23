@@ -1,0 +1,13 @@
+{
+  "name": "eh-content-admin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Beheerinterface voor EHBO en EHBT content in een eigen repo",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
