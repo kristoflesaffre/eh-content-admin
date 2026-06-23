@@ -62,12 +62,36 @@ function markDirty() {
   setStatus("Niet opgeslagen wijzigingen", "");
 }
 
+function normalizeSearch(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim();
+}
+
+function currentSearchQuery() {
+  return $("search")?.value.trim() || "";
+}
+
 function sectionMeta() {
   return SECTIONS[state.site].find(s => s.id === state.section);
 }
 
+function sectionMetaById(sectionId) {
+  return SECTIONS[state.site].find(s => s.id === sectionId);
+}
+
+function sectionLabel(sectionId) {
+  return sectionMetaById(sectionId)?.label || sectionId;
+}
+
 function sectionData() {
   return state.data?.[state.section];
+}
+
+function sectionDataById(sectionId) {
+  return state.data?.[sectionId];
 }
 
 function heeftBeeldEditor() {
@@ -97,13 +121,13 @@ function itemTitle(item, sectionId) {
   return item.id || item.naam || item.titel || "Item";
 }
 
-function listItems() {
-  const data = sectionData();
-  const meta = sectionMeta();
+function listItemsForSection(sectionId) {
+  const data = sectionDataById(sectionId);
+  const meta = sectionMetaById(sectionId);
   if (!data) return [];
 
   if (meta.type === "object") {
-    if (sectionMeta().id === "mytheLeeftijden") {
+    if (sectionId === "mytheLeeftijden") {
       return Object.entries(data).map(([id, leeftijd]) => ({
         id,
         _display: id,
@@ -115,9 +139,99 @@ function listItems() {
   return data.map((item, index) => ({ ...item, _index: index }));
 }
 
+function listItems() {
+  return listItemsForSection(state.section);
+}
+
 function findItem(id) {
-  const items = listItems();
+  const items = listItemsForSection(state.section);
   return items.find(i => i.id === id);
+}
+
+const SEARCH_SKIP_KEYS = new Set(["_meta", "_index", "beeld", "cover"]);
+
+function collectSearchParts(value, parts = []) {
+  if (value === null || value === undefined) return parts;
+
+  if (Array.isArray(value)) {
+    value.forEach(entry => collectSearchParts(entry, parts));
+    return parts;
+  }
+
+  if (typeof value === "object") {
+    for (const [key, entry] of Object.entries(value)) {
+      if (SEARCH_SKIP_KEYS.has(key)) continue;
+      collectSearchParts(entry, parts);
+    }
+    return parts;
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    const text = String(value).replace(/\s+/g, " ").trim();
+    if (text) parts.push(text);
+  }
+  return parts;
+}
+
+function snippetFromSearchParts(parts, title, id) {
+  const skip = new Set([normalizeSearch(title), normalizeSearch(id)]);
+  const candidate = parts.find(part => part.length > 32 && !skip.has(normalizeSearch(part)))
+    || parts.find(part => !skip.has(normalizeSearch(part)))
+    || "";
+  if (!candidate) return "";
+  return candidate.length > 150 ? `${candidate.slice(0, 147).trim()}…` : candidate;
+}
+
+function buildSearchResult(item, sectionId) {
+  const title = itemTitle(item, sectionId);
+  const parts = collectSearchParts(item, []);
+  const contentText = parts.join(" · ");
+  const haystack = normalizeSearch([sectionLabel(sectionId), item.id, title, contentText].join(" "));
+  const titleHaystack = normalizeSearch([item.id, title].join(" "));
+  return {
+    sectionId,
+    item,
+    title,
+    haystack,
+    titleHaystack,
+    snippet: snippetFromSearchParts(parts, title, item.id)
+  };
+}
+
+function searchResults(query) {
+  const q = normalizeSearch(query);
+  if (!q) {
+    return listItemsForSection(state.section).map(item => buildSearchResult(item, state.section));
+  }
+
+  return SECTIONS[state.site]
+    .flatMap(section => listItemsForSection(section.id).map(item => buildSearchResult(item, section.id)))
+    .filter(result => result.haystack.includes(q))
+    .sort((a, b) => {
+      const aRank = a.titleHaystack.includes(q) ? 0 : 1;
+      const bRank = b.titleHaystack.includes(q) ? 0 : 1;
+      if (aRank !== bRank) return aRank - bRank;
+      const bySection = sectionLabel(a.sectionId).localeCompare(sectionLabel(b.sectionId), "nl");
+      if (bySection !== 0) return bySection;
+      return a.title.localeCompare(b.title, "nl");
+    });
+}
+
+function syncSelectionWithResults(results) {
+  const activeExists = results.some(result => result.sectionId === state.section && result.item.id === state.selectedId);
+  if (activeExists) return;
+
+  if (!results.length) {
+    state.selectedId = null;
+    return;
+  }
+
+  const first = results.find(result => result.sectionId === state.section) || results[0];
+  if (state.section !== first.sectionId) {
+    state.section = first.sectionId;
+    renderSectionNav();
+  }
+  state.selectedId = first.item.id;
 }
 
 function updateItem(id, patch) {
@@ -198,35 +312,45 @@ function renderSectionNav() {
 }
 
 function renderList() {
-  const q = $("search").value.trim().toLowerCase();
-  const items = listItems().filter(item => {
-    if (!q) return true;
-    const hay = `${item.id} ${itemTitle(item, state.section)}`.toLowerCase();
-    return hay.includes(q);
-  });
+  const q = currentSearchQuery();
+  const isGlobalSearch = Boolean(q);
+  const results = searchResults(q);
+  syncSelectionWithResults(results);
 
-  $("list-count").textContent = `${items.length} item${items.length === 1 ? "" : "s"}`;
+  const sectionCount = new Set(results.map(result => result.sectionId)).size;
+  if (isGlobalSearch) {
+    $("list-count").textContent = `${results.length} resultaat${results.length === 1 ? "" : "en"} in ${sectionCount} sectie${sectionCount === 1 ? "" : "s"}`;
+  } else {
+    $("list-count").textContent = `${results.length} item${results.length === 1 ? "" : "s"} in ${sectionLabel(state.section)}`;
+  }
+
   const list = $("item-list");
   list.innerHTML = "";
 
-  for (const item of items) {
+  for (const result of results) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = `item-btn${item.id === state.selectedId ? " active" : ""}`;
-    btn.innerHTML = `<div class="title">${escapeHtml(itemTitle(item, state.section))}</div><div class="meta">${escapeHtml(item.id)}</div>`;
+    btn.className = `item-btn${result.sectionId === state.section && result.item.id === state.selectedId ? " active" : ""}`;
+    const metaHtml = isGlobalSearch
+      ? `<div class="meta meta-row"><span class="section-pill">${escapeHtml(sectionLabel(result.sectionId))}</span><span>${escapeHtml(result.item.id)}</span></div>`
+      : `<div class="meta">${escapeHtml(result.item.id)}</div>`;
+    const snippetHtml = isGlobalSearch && result.snippet
+      ? `<div class="snippet">${escapeHtml(result.snippet)}</div>`
+      : "";
+    btn.innerHTML = `<div class="title">${escapeHtml(result.title)}</div>${metaHtml}${snippetHtml}`;
     btn.addEventListener("click", () => {
-      state.selectedId = item.id;
+      if (state.section !== result.sectionId) {
+        state.section = result.sectionId;
+        renderSectionNav();
+      }
+      state.selectedId = result.item.id;
       renderList();
       renderEditor();
     });
     list.appendChild(btn);
   }
 
-  if (!state.selectedId && items.length) {
-    state.selectedId = items[0].id;
-    renderList();
-    renderEditor();
-  }
+  renderEditor();
 }
 
 function escapeHtml(str) {
@@ -292,6 +416,7 @@ function beeldEditor(item) {
               <input type="file" name="beeldBestand" accept="image/png,image/jpeg,image/webp,image/avif,image/gif">
             </label>
             <button type="button" class="btn btn-secondary btn-small" data-paste-beeld>Plak uit klembord</button>
+            <button type="button" class="btn btn-secondary btn-small" data-copy-beeld>Kopieer naar klembord</button>
             <button type="button" class="btn btn-secondary btn-small" data-upload-beeld>Upload</button>
             <button type="button" class="btn btn-secondary btn-small" data-download-beeld>Download</button>
             <button type="button" class="btn btn-secondary btn-small" data-clear-beeld>Leegmaken</button>
@@ -313,12 +438,17 @@ function beeldEditor(item) {
 }
 
 function blokItemHtml(name, i, blok, zeg) {
+  const extraVelden = Object.fromEntries(
+    Object.entries(blok || {}).filter(([k]) => k !== "kop" && k !== "tekst" && k !== "zeg")
+  );
+  const extraJson = Object.keys(extraVelden).length ? JSON.stringify(extraVelden) : "";
   return `
     <div class="repeater-item">
       <div class="repeater-item-head">
         <span class="repeater-num">Blok ${i + 1}</span>
         <button type="button" class="btn-icon" data-remove="${name}" title="Verwijderen" aria-label="Verwijderen">×</button>
       </div>
+      ${extraJson ? `<input type="hidden" data-field="extra" value="${escapeAttr(extraJson)}">` : ""}
       <div class="field">
         <label>Titel (optioneel)</label>
         <input type="text" data-field="kop" value="${escapeAttr(blok.kop || "")}">
@@ -562,15 +692,19 @@ function parseRepeaterFromForm(form, name) {
   if (kind === "blokken") {
     const zeg = root.dataset.zeg === "true";
     return [...root.querySelectorAll(".repeater-item")].map(el => {
-      const block = {};
+      const extraRaw = el.querySelector('[data-field="extra"]')?.value || "";
+      let block = {};
+      try { if (extraRaw) block = { ...JSON.parse(extraRaw) }; } catch {}
       const kop = el.querySelector('[data-field="kop"]')?.value?.trim();
       const tekst = el.querySelector('[data-field="tekst"]')?.value?.trim();
       const zegVal = el.querySelector('[data-field="zeg"]');
       if (kop) block.kop = kop;
+      else delete block.kop;
       if (tekst) block.tekst = tekst;
+      else delete block.tekst;
       if (zegVal) block.zeg = zegVal.value.trim() || null;
       return block;
-    }).filter(b => b.tekst || b.kop);
+    }).filter(b => b.tekst || b.kop || b.lijst);
   }
 
   if (kind === "bronnen") {
@@ -748,6 +882,45 @@ function downloadBlobAlsBestand(blob, naam) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+async function maakPngBlobVanBeeld(blob) {
+  if (blob.type === "image/png") return blob;
+  if (typeof createImageBitmap !== "function") {
+    throw new Error("Deze browser kan dit beeld niet omzetten voor het klembord.");
+  }
+
+  const bitmap = await createImageBitmap(blob);
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      throw new Error("Canvas initialiseren mislukt.");
+    }
+    ctx.drawImage(bitmap, 0, 0);
+    return await new Promise((resolve, reject) => {
+      canvas.toBlob(pngBlob => {
+        if (pngBlob) resolve(pngBlob);
+        else reject(new Error("Omzetten naar PNG mislukt."));
+      }, "image/png");
+    });
+  } finally {
+    bitmap.close();
+  }
+}
+
+async function kopieerBlobNaarClipboard(blob) {
+  if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+    throw new Error("Deze browser ondersteunt afbeeldingen kopiëren naar het klembord niet.");
+  }
+  const pngBlob = await maakPngBlobVanBeeld(blob);
+  await navigator.clipboard.write([
+    new ClipboardItem({
+      [pngBlob.type]: pngBlob
+    })
+  ]);
+}
+
 function clearPendingBeeldUpload(form) {
   pendingBeeldUploads.delete(form);
 }
@@ -785,6 +958,7 @@ function wireBeeldForm(form, item) {
   const fileInput = form.querySelector('[name="beeldBestand"]');
   const uploadBtn = form.querySelector("[data-upload-beeld]");
   const pasteBtn = form.querySelector("[data-paste-beeld]");
+  const copyBtn = form.querySelector("[data-copy-beeld]");
   const downloadBtn = form.querySelector("[data-download-beeld]");
   const clearBtn = form.querySelector("[data-clear-beeld]");
   const srcInput = form.querySelector('[name="beeld.src"]');
@@ -821,6 +995,33 @@ function wireBeeldForm(form, item) {
       });
     } catch (err) {
       setStatus(err.message || "Klembordafbeelding ophalen mislukt", "err");
+    }
+  });
+
+  copyBtn?.addEventListener("click", async () => {
+    try {
+      const pending = pendingBeeldUploads.get(form);
+      if (pending?.file) {
+        await kopieerBlobNaarClipboard(pending.file);
+        setStatus("Afbeelding gekopieerd naar het klembord.", "ok");
+        return;
+      }
+
+      const src = srcInput?.value?.trim() || "";
+      if (!src) {
+        throw new Error("Nog geen afbeelding om te kopiëren.");
+      }
+
+      setStatus("Afbeelding kopiëren…");
+      const res = await fetch(siteAssetUrl(src, String(Date.now())));
+      if (!res.ok) {
+        throw new Error("Ik kon dit beeld niet ophalen.");
+      }
+      const blob = await res.blob();
+      await kopieerBlobNaarClipboard(blob);
+      setStatus("Afbeelding gekopieerd naar het klembord.", "ok");
+    } catch (err) {
+      setStatus(err.message || "Kopiëren mislukt", "err");
     }
   });
 
@@ -1296,7 +1497,41 @@ function applyCurrentForm() {
   return true;
 }
 
+async function uploadPendingBeeldAlsNodig() {
+  const form = document.getElementById("edit-form");
+  if (!form) return;
+  const pending = pendingBeeldUploads.get(form);
+  if (!pending?.file) return;
+  const srcInput = form.querySelector('[name="beeld.src"]');
+  const fileInput = form.querySelector('[name="beeldBestand"]');
+  setStatus("Beeld uploaden voor opslaan…");
+  const dataUrl = pending.dataUrl || await fileToDataUrl(pending.file);
+  const res = await fetch(`/api/${state.site}/upload-image`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      section: state.section,
+      itemId: findItem(state.selectedId)?.id,
+      filename: pending.file.name,
+      dataUrl
+    })
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Beeld uploaden mislukt");
+  if (srcInput) srcInput.value = json.src;
+  clearPendingBeeldUpload(form);
+  if (fileInput) fileInput.value = "";
+  // Gebruik de lokale dataUrl als preview zodat de admin-server niet de website-server hoeft te zijn
+  setBeeldPreview(form, dataUrl, { local: true });
+}
+
 async function saveAll() {
+  try {
+    await uploadPendingBeeldAlsNodig();
+  } catch (err) {
+    setStatus(err.message || "Beeld uploaden mislukt", "err");
+    return;
+  }
   if (!applyCurrentForm()) return;
   setStatus("Opslaan…");
   const res = await fetch(`/api/${state.site}/save-all`, {
@@ -1314,6 +1549,12 @@ async function saveAll() {
 }
 
 async function saveSection() {
+  try {
+    await uploadPendingBeeldAlsNodig();
+  } catch (err) {
+    setStatus(err.message || "Beeld uploaden mislukt", "err");
+    return;
+  }
   if (!applyCurrentForm()) return;
   setStatus("Sectie opslaan…");
   const res = await fetch(`/api/${state.site}/save/${state.section}`, {

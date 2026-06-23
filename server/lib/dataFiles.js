@@ -6,6 +6,29 @@ const { serialize } = require("./serialize");
 const EHBO_VRAGEN_FILES = Array.from({ length: 13 }, (_, i) => `data-vragen-${i + 1}.js`);
 const EHBT_VRAGEN_FILES = Array.from({ length: 19 }, (_, i) => `data-vragen-${i + 1}.js`);
 
+const BUNDLE_ORDER = {
+  ehbo: [
+    "data-boeken.js",
+    ...Array.from({ length: 13 }, (_, i) => `data-vragen-${i + 1}.js`),
+    "data-extra.js"
+  ],
+  ehbt: [
+    "data-boeken.js",
+    ...Array.from({ length: 19 }, (_, i) => `data-vragen-${i + 1}.js`),
+    "data-therapieen.js",
+    "data-uitgelegd.js",
+    "data-extra.js"
+  ]
+};
+
+function rebuildBundle(siteKey, sitePath) {
+  const dir = jsDir(sitePath);
+  const files = BUNDLE_ORDER[siteKey];
+  if (!files) return;
+  const bundle = files.map(f => fs.readFileSync(path.join(dir, f), "utf8")).join("\n");
+  fs.writeFileSync(path.join(dir, "data-bundle.js"), bundle, "utf8");
+}
+
 /** Per site: hoe databestanden worden opgebouwd bij opslaan. */
 const FILE_LAYOUTS = {
   ehbo: {
@@ -276,6 +299,7 @@ function saveSection(siteKey, sitePath, section, payload) {
 
   const out = buildFileContent(layout, values);
   fs.writeFileSync(path.join(jsDir(sitePath), map.file), out, "utf8");
+  rebuildBundle(siteKey, sitePath);
 }
 
 function saveAll(siteKey, sitePath, data) {
@@ -299,6 +323,7 @@ function saveAll(siteKey, sitePath, data) {
     const out = buildFileContent(layout, fileValues[file]);
     fs.writeFileSync(path.join(jsDir(sitePath), file), out, "utf8");
   }
+  rebuildBundle(siteKey, sitePath);
 }
 
 function exportToSectionKey(exportName) {

@@ -215,6 +215,34 @@ button, input, select, textarea {
   margin-top: 0.15rem;
 }
 
+.item-btn .meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.section-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.73rem;
+  font-weight: 600;
+}
+
+.item-btn .snippet {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.35rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .editor-panel {
   padding: 1.25rem;
   overflow: auto;
